@@ -1,19 +1,26 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import chokidar from "chokidar";
-import { getChangedFiles, getDiff, getLastCommit, listFiles } from "./gitState.js";
+import { getChangedFiles, getDiff, getLastCommit, getMtime, listFiles } from "./gitState.js";
 import { buildTree, flattenVisible, initialExpandedPaths } from "./tree.js";
 import { COLORS, flashBlend, isBold, statusColor } from "./theme.js";
 
 const STATUS_GLYPH = { modified: "M", added: "A", deleted: "D", renamed: "R" };
 const DEBOUNCE_MS = 200;
+// Reserved width for "   M   99s" after the (possibly truncated) name, so a
+// long filename never pushes the status glyph/age off the right edge.
+const STATUS_SUFFIX_WIDTH = 11; // "   " + glyph(1) + "   " + age(4)
 
 function timeAgo(ms) {
   if (ms == null) return "";
   const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
-  return `${m}m`;
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  return `${d}d`;
 }
 
 // ├── / └── / │   connectors, built from the ancestor chain's last-child flags.
@@ -47,12 +54,30 @@ export default function App({ cwd, respectGitignore }) {
   const [expanded, setExpanded] = useState(() => new Set([""]));
   const [cursor, setCursor] = useState(0);
   const [lastCommit, setLastCommit] = useState({ hash: null, subject: null });
-  const [flashes, setFlashes] = useState(new Map()); // path -> timestamp
   const [now, setNow] = useState(Date.now());
   const [view, setView] = useState({ mode: "tree" });
 
+  // path -> timestamp. A plain ref, not state: filesystem events can arrive
+  // in tight bursts (an agent writing dozens of files in a loop), and firing
+  // a React re-render per event was enough to visibly corrupt the terminal
+  // output. The existing 150ms animation tick already re-renders regularly
+  // for the flash-fade, so it's what picks up ref updates — no separate
+  // render is triggered from the watcher callback itself.
+  const flashesRef = useRef(new Map());
   const prevChangedKeys = useRef(new Set());
   const debounceTimer = useRef(null);
+
+  // For changes that predate the watcher (already dirty when the tool
+  // launched) there's no live event to time-stamp — fall back to the file's
+  // on-disk mtime so the age column isn't just blank. Only seeds paths we
+  // haven't already got a (live or seeded) timestamp for.
+  function seedFlashesFromMtime(changesMap) {
+    for (const [path, change] of changesMap) {
+      if (change.status === "deleted" || flashesRef.current.has(path)) continue;
+      const mtime = getMtime(cwd, path);
+      if (mtime != null) flashesRef.current.set(path, mtime);
+    }
+  }
 
   function refresh() {
     const files = listFiles(cwd, respectGitignore);
@@ -61,6 +86,7 @@ export default function App({ cwd, respectGitignore }) {
     setTree(nextTree);
     setChanges(changesMap);
     setLastCommit(getLastCommit(cwd));
+    seedFlashesFromMtime(changesMap);
 
     setExpanded((prevExpanded) => {
       const next = new Set(prevExpanded);
@@ -88,6 +114,7 @@ export default function App({ cwd, respectGitignore }) {
     setChanges(changesMap);
     setExpanded(initialExpandedPaths(changesMap));
     setLastCommit(getLastCommit(cwd));
+    seedFlashesFromMtime(changesMap);
     prevChangedKeys.current = new Set(changesMap.keys());
 
     const watcher = chokidar.watch(cwd, {
@@ -101,7 +128,7 @@ export default function App({ cwd, respectGitignore }) {
 
     watcher.on("all", (_event, path) => {
       const rel = path.startsWith(cwd) ? path.slice(cwd.length + 1) : path;
-      setFlashes((prev) => new Map(prev).set(rel, Date.now()));
+      flashesRef.current.set(rel, Date.now()); // no setState here — see flashesRef comment above
       clearTimeout(debounceTimer.current);
       debounceTimer.current = setTimeout(refresh, DEBOUNCE_MS);
     });
@@ -195,7 +222,11 @@ export default function App({ cwd, respectGitignore }) {
   let start = 0;
   if (cursor >= maxRows) start = cursor - maxRows + 1;
   const windowRows = visibleRows.slice(start, start + maxRows);
-  const maxLabelWidth = visibleRows.reduce((max, row) => Math.max(max, rowLabelWidth(row)), 0);
+  const rawMaxLabelWidth = visibleRows.reduce((max, row) => Math.max(max, rowLabelWidth(row)), 0);
+  // Cap the shared column width to what the terminal can actually fit, so a
+  // long name gets truncated (with room reserved for M/A/D + age) instead
+  // of pushing the status column past the right edge.
+  const maxLabelWidth = Math.min(rawMaxLabelWidth, Math.max(10, columns - STATUS_SUFFIX_WIDTH));
   const rule = "─".repeat(Math.max(10, columns));
   const isClean = changes.size === 0;
 
@@ -221,7 +252,7 @@ export default function App({ cwd, respectGitignore }) {
               row={row}
               selected={start + i === cursor}
               expanded={expanded.has(row.node.path)}
-              flashAt={flashes.get(row.node.path)}
+              flashAt={flashesRef.current.get(row.node.path)}
               now={now}
               labelWidth={maxLabelWidth}
             />
@@ -280,18 +311,27 @@ function TreeRow({ row, selected, expanded, flashAt, now, labelWidth }) {
   }
 
   const glyph = hasStatus ? STATUS_GLYPH[node.status] : " ";
-  const age = elapsed != null ? timeAgo(elapsed).padEnd(3) : "";
+  const age = elapsed != null ? timeAgo(elapsed).padEnd(4) : "";
   const strike = node.status === "deleted";
 
-  const ownWidth = 2 /* gutter */ + prefix.length + node.name.length;
-  const pad = " ".repeat(Math.max(0, labelWidth - ownWidth));
+  // The name gets whatever's left of the shared column budget after gutter
+  // + branch prefix. If it doesn't fit, truncate the name itself (not the
+  // whole row) so the status glyph + age always survive at the end.
+  const nameBudget = Math.max(1, labelWidth - (2 /* gutter */ + prefix.length));
+  let displayName = node.name;
+  let pad = "";
+  if (node.name.length > nameBudget) {
+    displayName = nameBudget <= 1 ? node.name.slice(0, 1) : node.name.slice(0, nameBudget - 1) + "…";
+  } else {
+    pad = " ".repeat(nameBudget - node.name.length);
+  }
 
   return (
     <Text backgroundColor={selected ? COLORS.selectionBg : undefined} wrap="truncate-end">
       {gutter}
       <Text color={COLORS.branch}>{prefix}</Text>
       <Text color={color} bold={bold} strikethrough={strike}>
-        {node.name}
+        {displayName}
       </Text>
       {hasStatus ? (
         <Text color={color} bold={bold}>

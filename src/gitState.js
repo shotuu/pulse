@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 function git(cwd, args, allowFail = false) {
@@ -75,6 +75,18 @@ function walkAllFiles(cwd) {
 
 export function listFiles(cwd, respectGitignore) {
   return respectGitignore ? listGitFiles(cwd) : walkAllFiles(cwd);
+}
+
+// Fallback "how long ago" source for changes that predate the watcher —
+// e.g. a file already dirty when the tool was launched, so there was never
+// a live filesystem event to time-stamp it. Returns null for paths that no
+// longer exist on disk (deleted files).
+export function getMtime(cwd, filepath) {
+  try {
+    return statSync(join(cwd, filepath)).mtimeMs;
+  } catch {
+    return null;
+  }
 }
 
 const STATUS_MAP = {
