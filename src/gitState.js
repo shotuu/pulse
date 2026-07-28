@@ -79,7 +79,9 @@ const STATUS_MAP = {
 
 // Returns Map<path, { status, from? }> for all changes since HEAD (staged + unstaged).
 export function getChangedFiles(cwd) {
-  const out = git(cwd, ["status", "--porcelain=v1", "-z"], true);
+  // --untracked-files=all forces git to list every file inside a new
+  // directory individually, instead of collapsing it to one "dir/" entry.
+  const out = git(cwd, ["status", "--porcelain=v1", "--untracked-files=all", "-z"], true);
   const parts = out.split("\0").filter(Boolean);
   const changes = new Map();
 
