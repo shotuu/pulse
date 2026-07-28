@@ -208,14 +208,14 @@ export default function App({ cwd, respectGitignore }) {
     return <DiffView file={view.file} diff={view.diff} />;
   }
 
-  const clock = new Date(now).toLocaleTimeString([], { hour12: false });
   const counts = { modified: 0, added: 0, deleted: 0 };
   for (const change of changes.values()) {
     if (counts[change.status] !== undefined) counts[change.status] += 1;
   }
   const repoName = cwd.split("/").filter(Boolean).pop() ?? cwd;
+  const commitAge = lastCommit.timestampMs != null ? `${timeAgo(now - lastCommit.timestampMs)} ago` : null;
   const headerRight = lastCommit.hash
-    ? `since ${lastCommit.hash} · ${changes.size === 0 ? "clean" : `${changes.size} changed`}`
+    ? `since ${lastCommit.hash} (${commitAge}) · ${changes.size === 0 ? "clean" : `${changes.size} changed`}`
     : "not a git repo";
 
   const maxRows = Math.max(4, rows - 8); // header + rules + footer + margins
@@ -236,10 +236,7 @@ export default function App({ cwd, respectGitignore }) {
 
       <Box justifyContent="space-between">
         <Text bold>{repoName}/</Text>
-        <Text>
-          <Text color={COLORS.flash}>{headerRight}</Text>
-          <Text dimColor>    {clock}</Text>
-        </Text>
+        <Text color={COLORS.flash}>{headerRight}</Text>
       </Box>
 
       <Box flexDirection="column">

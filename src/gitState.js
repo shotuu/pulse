@@ -30,11 +30,13 @@ export function isGitRepo(cwd) {
 
 export function getLastCommit(cwd) {
   try {
-    const out = git(cwd, ["log", "-1", "--format=%h %s"]).trim();
-    const [hash, ...rest] = out.split(" ");
-    return { hash, subject: rest.join(" ") };
+    // \x1f (unit separator) as the delimiter, not a space, since %s can
+    // legitimately contain spaces.
+    const out = git(cwd, ["log", "-1", "--format=%h\x1f%ct\x1f%s"]).trim();
+    const [hash, timestamp, subject] = out.split("\x1f");
+    return { hash, timestampMs: Number(timestamp) * 1000, subject };
   } catch {
-    return { hash: null, subject: null };
+    return { hash: null, timestampMs: null, subject: null };
   }
 }
 
