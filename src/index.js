@@ -6,7 +6,7 @@ import App from "../dist/app.js";
 import { isGitRepo } from "./gitState.js";
 
 function parseArgs(argv) {
-  const args = { path: process.cwd(), respectGitignore: true, recursive: true };
+  const args = { path: null, respectGitignore: true };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "-p" || arg === "--path" || arg === "-path") {
@@ -15,8 +15,12 @@ function parseArgs(argv) {
       args.respectGitignore = false;
     } else if (arg === "-h" || arg === "--help") {
       args.help = true;
+    } else if (!arg.startsWith("-") && args.path == null) {
+      // `pulse <dir>` — a bare positional argument, same as -p/--path.
+      args.path = arg;
     }
   }
+  if (args.path == null) args.path = process.cwd();
   return args;
 }
 
@@ -26,10 +30,12 @@ if (args.help) {
   console.log(`pulse — live file tree of changes since the last git commit
 
 Usage:
+  pulse [dir] [--no-gitignore]
   pulse [-p|--path <dir>] [--no-gitignore]
 
 Options:
-  -p, --path <dir>   Directory to watch (default: current directory)
+  [dir]               Directory to watch (default: current directory)
+  -p, --path <dir>    Same as [dir], as a flag
   --no-gitignore      Do not filter out files matched by .gitignore
   -h, --help          Show this help
 `);
