@@ -10,7 +10,8 @@
     "build": "esbuild src/App.jsx --bundle --outfile=dist/app.js --format=esm --platform=node --jsx=automatic --external:react --external:ink --external:chokidar",
     "start": "npm run build --silent && node src/index.js",
     "test": "node test/stress-test.mjs",
-    "demo": "node scripts/demo.mjs"
+    "demo": "node scripts/demo.mjs",
+    "demo:clean": "node scripts/clean-demo.mjs"
   },
   "dependencies": {
     "chokidar": "^4.0.1",
