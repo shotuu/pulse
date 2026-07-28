@@ -89,12 +89,17 @@ export function initialExpandedPaths(changesMap) {
 // Flattens the tree into visible rows given the current expanded-dir set,
 // for rendering + cursor navigation. Collapsed dirs still emit one row
 // (with their badge) but no descendants.
-export function flattenVisible(root, expandedPaths, depth = 0, out = []) {
-  for (const child of root.children) {
-    out.push({ node: child, depth });
+//
+// Each row carries `isLast` (is it the last sibling at its depth) and
+// `ancestorsLast` (same, for every ancestor) so the renderer can draw
+// proper ├──/└──/│ branch connectors instead of just indentation.
+export function flattenVisible(root, expandedPaths, depth = 0, out = [], ancestorsLast = []) {
+  root.children.forEach((child, index) => {
+    const isLast = index === root.children.length - 1;
+    out.push({ node: child, depth, isLast, ancestorsLast });
     if (child.type === "dir" && expandedPaths.has(child.path)) {
-      flattenVisible(child, expandedPaths, depth + 1, out);
+      flattenVisible(child, expandedPaths, depth + 1, out, [...ancestorsLast, isLast]);
     }
-  }
+  });
   return out;
 }

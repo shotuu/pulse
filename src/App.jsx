@@ -210,19 +210,29 @@ export default function App({ cwd, respectGitignore }) {
   );
 }
 
+// ├── / └── / │   connectors, built from the ancestor chain's last-child flags.
+function branchPrefix(ancestorsLast, isLast) {
+  let prefix = "";
+  for (const last of ancestorsLast) prefix += last ? "    " : "│   ";
+  prefix += isLast ? "└── " : "├── ";
+  return prefix;
+}
+
 function TreeRow({ row, selected, expanded, flashAt, now }) {
-  const { node, depth } = row;
-  const indent = "  ".repeat(depth);
+  const { node, ancestorsLast, isLast } = row;
+  const gutter = selected ? "❯ " : "  ";
+  const prefix = branchPrefix(ancestorsLast, isLast);
   const elapsed = flashAt ? now - flashAt : null;
 
   if (node.type === "dir") {
     const hasChanges = node.changedCount > 0;
-    const color = hasChanges ? COLORS.dirActive : COLORS.dirClean;
+    const color = hasChanges ? COLORS.dirActive : selected ? COLORS.dirCleanSelected : COLORS.dirClean;
     const arrow = expanded ? "▾" : "▸";
     const badge = hasChanges ? ` ●${node.changedCount}` : "";
     return (
-      <Text backgroundColor={selected ? "gray" : undefined}>
-        {indent}
+      <Text backgroundColor={selected ? COLORS.selectionBg : undefined}>
+        {gutter}
+        <Text color={COLORS.branch}>{prefix}</Text>
         <Text color={color} bold={hasChanges}>
           {arrow} {node.name}/{badge}
         </Text>
@@ -231,7 +241,7 @@ function TreeRow({ row, selected, expanded, flashAt, now }) {
   }
 
   const hasStatus = Boolean(node.status);
-  let color = hasStatus ? statusColor(node.status) : undefined;
+  let color = hasStatus ? statusColor(node.status) : selected ? COLORS.dirCleanSelected : undefined;
   let bold = false;
   if (hasStatus && elapsed != null) {
     color = flashBlend(node.status, elapsed);
@@ -245,8 +255,9 @@ function TreeRow({ row, selected, expanded, flashAt, now }) {
   const strike = node.status === "deleted";
 
   return (
-    <Text backgroundColor={selected ? "gray" : undefined}>
-      {indent}
+    <Text backgroundColor={selected ? COLORS.selectionBg : undefined}>
+      {gutter}
+      <Text color={COLORS.branch}>{prefix}</Text>
       <Text color={color} bold={bold} strikethrough={strike}>
         {node.name}
       </Text>

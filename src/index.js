@@ -43,4 +43,18 @@ if (!isGitRepo(cwd)) {
   process.exit(1);
 }
 
+// Take over the terminal like vim/htop/less: switch to the alternate screen
+// buffer and hide the cursor, so only the tree is visible while running —
+// then restore whatever was on screen before, on any kind of exit.
+const isTTY = Boolean(process.stdout.isTTY);
+if (isTTY) {
+  process.stdout.write("\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l");
+}
+function restoreScreen() {
+  if (isTTY) process.stdout.write("\x1b[?1049l\x1b[?25h");
+}
+process.on("exit", restoreScreen);
+process.on("SIGINT", () => process.exit(0));
+process.on("SIGTERM", () => process.exit(0));
+
 render(React.createElement(App, { cwd, respectGitignore: args.respectGitignore }));

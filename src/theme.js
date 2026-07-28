@@ -6,8 +6,11 @@ export const COLORS = {
   deleted: "#f38ba8", // rose
   dirActive: "#b4befe", // lavender — directory contains changes
   dirClean: "#6c7086", // muted gray
+  dirCleanSelected: "#a6adc8", // brighter gray, used only on the selected row for contrast
   diffAdd: "#a6e3a1",
   diffDel: "#f38ba8",
+  selectionBg: "#313244", // dark indigo, distinct from dirClean so gray-on-gray never happens
+  branch: "#45475a", // tree connector lines (├── └── │)
 };
 
 export const FLASH_COLOR_MS = 1000; // sky -> status color
