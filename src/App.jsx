@@ -11,10 +11,29 @@ const DEBOUNCE_MS = 200;
 function timeAgo(ms) {
   if (ms == null) return "";
   const s = Math.floor(ms / 1000);
-  if (s < 1) return "just now";
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
   return `${m}m`;
+}
+
+// ├── / └── / │   connectors, built from the ancestor chain's last-child flags.
+function branchPrefix(ancestorsLast, isLast) {
+  let prefix = "";
+  for (const last of ancestorsLast) prefix += last ? "    " : "│   ";
+  prefix += isLast ? "└── " : "├── ";
+  return prefix;
+}
+
+// Raw (uncolored) printed width of everything left of the status column, so
+// M/A/D and the age can be padded to a shared column across every row.
+function rowLabelWidth(row) {
+  const prefixLen = branchPrefix(row.ancestorsLast, row.isLast).length;
+  const GUTTER = 2;
+  if (row.node.type === "dir") {
+    const badge = row.node.changedCount > 0 ? ` ●${row.node.changedCount}` : "";
+    return GUTTER + prefixLen + 2 /* arrow + space */ + row.node.name.length + 1 /* slash */ + badge.length;
+  }
+  return GUTTER + prefixLen + row.node.name.length;
 }
 
 export default function App({ cwd, respectGitignore }) {
@@ -175,6 +194,7 @@ export default function App({ cwd, respectGitignore }) {
   let start = 0;
   if (cursor >= maxRows) start = cursor - maxRows + 1;
   const windowRows = visibleRows.slice(start, start + maxRows);
+  const maxLabelWidth = visibleRows.reduce((max, row) => Math.max(max, rowLabelWidth(row)), 0);
 
   return (
     <Box flexDirection="column">
@@ -194,6 +214,7 @@ export default function App({ cwd, respectGitignore }) {
             expanded={expanded.has(row.node.path)}
             flashAt={flashes.get(row.node.path)}
             now={now}
+            labelWidth={maxLabelWidth}
           />
         ))}
       </Box>
@@ -210,15 +231,7 @@ export default function App({ cwd, respectGitignore }) {
   );
 }
 
-// ├── / └── / │   connectors, built from the ancestor chain's last-child flags.
-function branchPrefix(ancestorsLast, isLast) {
-  let prefix = "";
-  for (const last of ancestorsLast) prefix += last ? "    " : "│   ";
-  prefix += isLast ? "└── " : "├── ";
-  return prefix;
-}
-
-function TreeRow({ row, selected, expanded, flashAt, now }) {
+function TreeRow({ row, selected, expanded, flashAt, now, labelWidth }) {
   const { node, ancestorsLast, isLast } = row;
   const gutter = selected ? "❯ " : "  ";
   const prefix = branchPrefix(ancestorsLast, isLast);
@@ -251,8 +264,11 @@ function TreeRow({ row, selected, expanded, flashAt, now }) {
   }
 
   const glyph = hasStatus ? STATUS_GLYPH[node.status] : " ";
-  const age = elapsed != null ? timeAgo(elapsed) : "";
+  const age = elapsed != null ? timeAgo(elapsed).padEnd(3) : "";
   const strike = node.status === "deleted";
+
+  const ownWidth = 2 /* gutter */ + prefix.length + node.name.length;
+  const pad = " ".repeat(Math.max(0, labelWidth - ownWidth));
 
   return (
     <Text backgroundColor={selected ? COLORS.selectionBg : undefined}>
@@ -263,9 +279,11 @@ function TreeRow({ row, selected, expanded, flashAt, now }) {
       </Text>
       {hasStatus ? (
         <Text color={color} bold={bold}>
-          {"  "}
+          {pad}
+          {"   "}
           {glyph}
-          {age ? `  ${age}` : ""}
+          {"   "}
+          {age}
         </Text>
       ) : null}
     </Text>
