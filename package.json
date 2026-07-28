@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Live file tree visualizer for watching agent/editor changes since the last git commit",
   "keywords": ["cli", "tui", "git", "file-watcher", "diff", "terminal", "ink"],
-  "author": "shotu (https://github.com/shotu)",
+  "author": "shotuu (https://github.com/shotuu)",
   "license": "MIT",
   "private": true,
   "type": "module",

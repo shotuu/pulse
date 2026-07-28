@@ -97,4 +97,4 @@ files in a loop) doesn't flood the terminal with re-renders.
 
 ---
 
-Made by [shotu](https://github.com/shotu).
+Made by [shotuu](https://github.com/shotuu).
