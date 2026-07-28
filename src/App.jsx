@@ -259,7 +259,7 @@ function TreeRow({ row, selected, expanded, flashAt, now, labelWidth }) {
     const arrow = expanded ? " " : "+";
     const badge = hasChanges ? ` ●${node.changedCount}` : "";
     return (
-      <Text backgroundColor={selected ? COLORS.selectionBg : undefined}>
+      <Text backgroundColor={selected ? COLORS.selectionBg : undefined} wrap="truncate-end">
         {gutter}
         <Text color={COLORS.branch}>{prefix}</Text>
         <Text color={color} bold={hasChanges}>
@@ -287,7 +287,7 @@ function TreeRow({ row, selected, expanded, flashAt, now, labelWidth }) {
   const pad = " ".repeat(Math.max(0, labelWidth - ownWidth));
 
   return (
-    <Text backgroundColor={selected ? COLORS.selectionBg : undefined}>
+    <Text backgroundColor={selected ? COLORS.selectionBg : undefined} wrap="truncate-end">
       {gutter}
       <Text color={COLORS.branch}>{prefix}</Text>
       <Text color={color} bold={bold} strikethrough={strike}>
@@ -307,27 +307,59 @@ function TreeRow({ row, selected, expanded, flashAt, now, labelWidth }) {
 }
 
 function DiffView({ file, diff }) {
-  const lines = (diff || "(no diff available)").split("\n");
+  const { stdout } = useStdout();
+  const rows = stdout?.rows ?? 24;
+  const columns = stdout?.columns ?? 60;
+  const lines = useMemo(() => (diff || "(no diff available)").split("\n"), [diff]);
+
+  // Same windowing the tree view uses: never hand Ink more lines than the
+  // terminal is tall, or the terminal auto-scrolls out from under Ink's own
+  // cursor bookkeeping and the next render desyncs (stale lines left behind).
+  const maxVisible = Math.max(4, rows - 4); // header + rules + margins
+  const maxScroll = Math.max(0, lines.length - maxVisible);
+  const [scroll, setScroll] = useState(0);
+
+  useInput(
+    (input, key) => {
+      if (key.downArrow || input === "j") setScroll((s) => Math.min(s + 1, maxScroll));
+      else if (key.upArrow || input === "k") setScroll((s) => Math.max(s - 1, 0));
+      else if (input === "d" || key.pageDown) setScroll((s) => Math.min(s + maxVisible, maxScroll));
+      else if (input === "u" || key.pageUp) setScroll((s) => Math.max(s - maxVisible, 0));
+    },
+    { isActive: Boolean(process.stdin.isTTY) },
+  );
+
+  const visibleLines = lines.slice(scroll, scroll + maxVisible);
+  const rule = "─".repeat(Math.max(10, columns));
+  const scrollInfo =
+    lines.length > maxVisible
+      ? `${scroll + 1}-${Math.min(scroll + maxVisible, lines.length)}/${lines.length}`
+      : `${lines.length} lines`;
+
   return (
     <Box flexDirection="column">
+      <Text color={COLORS.branch}>{rule}</Text>
       <Box justifyContent="space-between">
         <Text bold color={statusColor(file.status)}>
           {file.path} · {file.status}
         </Text>
-        <Text dimColor>[esc] back to tree</Text>
+        <Text dimColor>
+          {scrollInfo}    [j/k] scroll  [esc] back
+        </Text>
       </Box>
       <Box flexDirection="column">
-        {lines.map((line, i) => {
+        {visibleLines.map((line, i) => {
           let color;
           if (line.startsWith("+") && !line.startsWith("+++")) color = COLORS.diffAdd;
           else if (line.startsWith("-") && !line.startsWith("---")) color = COLORS.diffDel;
           return (
-            <Text key={i} color={color} dimColor={!color}>
+            <Text key={scroll + i} color={color} dimColor={!color} wrap="truncate-end">
               {line || " "}
             </Text>
           );
         })}
       </Box>
+      <Text color={COLORS.branch}>{rule}</Text>
     </Box>
   );
 }
