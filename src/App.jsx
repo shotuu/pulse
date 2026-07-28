@@ -4,6 +4,15 @@ import chokidar from "chokidar";
 import { getChangedFiles, getDiff, getLastCommit, getMtime, listFiles } from "./gitState.js";
 import { buildTree, flattenVisible, initialExpandedPaths } from "./tree.js";
 import { COLORS, flashBlend, isBold, statusColor } from "./theme.js";
+import { tokenizeLine } from "./highlight.js";
+
+const TOKEN_COLOR = {
+  keyword: COLORS.syntaxKeyword,
+  string: COLORS.syntaxString,
+  number: COLORS.syntaxNumber,
+  comment: COLORS.syntaxComment,
+  plain: COLORS.text,
+};
 
 const STATUS_GLYPH = { modified: "M", added: "A", deleted: "D", renamed: "R" };
 const DEBOUNCE_MS = 200;
@@ -385,18 +394,73 @@ function DiffView({ file, diff }) {
         </Text>
       </Box>
       <Box flexDirection="column">
-        {visibleLines.map((line, i) => {
-          let color;
-          if (line.startsWith("+") && !line.startsWith("+++")) color = COLORS.diffAdd;
-          else if (line.startsWith("-") && !line.startsWith("---")) color = COLORS.diffDel;
-          return (
-            <Text key={scroll + i} color={color} dimColor={!color} wrap="truncate-end">
-              {line || " "}
-            </Text>
-          );
-        })}
+        {visibleLines.map((line, i) => (
+          <DiffLine key={scroll + i} line={line} columns={columns} />
+        ))}
       </Box>
       <Text color={COLORS.branch}>{rule}</Text>
     </Box>
+  );
+}
+
+// Renders one diff line the way Claude Code/GitHub do: a muted background
+// tint carries the added/removed signal, while the code itself keeps its
+// (lightweight, generic) syntax colors instead of being solid green/red.
+function DiffLine({ line, columns }) {
+  if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("@@") || line.startsWith("\\")) {
+    const isHunk = line.startsWith("@@");
+    return (
+      <Text color={isHunk ? COLORS.diffHunk : undefined} dimColor={!isHunk} wrap="truncate-end">
+        {line || " "}
+      </Text>
+    );
+  }
+
+  const first = line[0];
+  let marker = " ";
+  let code = line;
+  let bg;
+  let markerColor;
+  if (first === "+") {
+    marker = "+";
+    code = line.slice(1);
+    bg = COLORS.diffAddBg;
+    markerColor = COLORS.diffAdd;
+  } else if (first === "-") {
+    marker = "-";
+    code = line.slice(1);
+    bg = COLORS.diffDelBg;
+    markerColor = COLORS.diffDel;
+  } else if (first === " ") {
+    code = line.slice(1);
+  } else {
+    // Doesn't match a unified-diff line shape at all (e.g. "Binary files
+    // ... differ") — show as-is rather than guessing.
+    return (
+      <Text dimColor wrap="truncate-end">
+        {line || " "}
+      </Text>
+    );
+  }
+
+  const tokens = tokenizeLine(code);
+  const padLen = Math.max(0, columns - (2 + code.length)); // marker + space + code
+
+  return (
+    <Text backgroundColor={bg} wrap="truncate-end">
+      {markerColor ? (
+        <Text color={markerColor} bold>
+          {marker}{" "}
+        </Text>
+      ) : (
+        `${marker} `
+      )}
+      {tokens.map((t, i) => (
+        <Text key={i} color={TOKEN_COLOR[t.type] ?? COLORS.text}>
+          {t.text}
+        </Text>
+      ))}
+      {padLen > 0 ? " ".repeat(padLen) : ""}
+    </Text>
   );
 }

@@ -42,7 +42,9 @@ pulse --help
   flash the instant a file is written, fading into its steady status color
 - Time since each change (`2s`, `11m`, ...) — falls back to the file's
   on-disk mtime if it was already dirty before you launched `pulse`
-- `enter` / `o` on a file opens a scrollable diff view; `esc` goes back
+- `enter` / `o` on a file opens a scrollable diff view — added/removed lines
+  get a muted background tint (not solid green/red text), with lightweight
+  syntax highlighting on top, similar to Claude Code's diff rendering
 
 Everything is scoped to changes **since your last commit** — commit, and the
 tree goes quiet.

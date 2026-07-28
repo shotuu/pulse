@@ -7,10 +7,18 @@ export const COLORS = {
   dirActive: "#b4befe", // lavender — directory contains changes
   dirClean: "#6c7086", // muted gray
   dirCleanSelected: "#a6adc8", // brighter gray, used only on the selected row for contrast
-  diffAdd: "#a6e3a1",
-  diffDel: "#f38ba8",
+  diffAdd: "#a6e3a1", // bright green — only used for the small +/- gutter glyph now
+  diffDel: "#f38ba8", // bright rose — only used for the small +/- gutter glyph now
+  diffAddBg: "#1f2d20", // muted dark-green row background for additions
+  diffDelBg: "#2d1f24", // muted dark-rose row background for deletions
+  diffHunk: "#74c7ec", // sapphire — @@ hunk headers
   selectionBg: "#313244", // dark indigo, distinct from dirClean so gray-on-gray never happens
   branch: "#45475a", // tree connector lines (├── └── │)
+  text: "#cdd6f4", // default light foreground for plain code tokens
+  syntaxKeyword: "#cba6f7", // mauve
+  syntaxString: "#fab387", // peach
+  syntaxNumber: "#f9e2af", // amber, reused — distinct screen from the tree so no ambiguity
+  syntaxComment: "#6c7086", // same muted gray as dirClean
 };
 
 export const FLASH_COLOR_MS = 1000; // sky -> status color

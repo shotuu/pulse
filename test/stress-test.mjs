@@ -19,6 +19,7 @@ import { join, dirname } from "node:path";
 import { getChangedFiles, getDiff, getLastCommit, isGitRepo, listFiles } from "../src/gitState.js";
 import { buildTree, flattenVisible, initialExpandedPaths } from "../src/tree.js";
 import { COLORS, flashBlend, isBold, statusColor } from "../src/theme.js";
+import { tokenizeLine } from "../src/highlight.js";
 
 // ---------- tiny test harness ----------
 
@@ -510,6 +511,45 @@ function scenarioThemeMath() {
   assert(Object.values(COLORS).every((c) => typeof c === "string"), "every palette entry should be a string");
 }
 
+function scenarioTokenizer() {
+  const rejoin = (line) => tokenizeLine(line).map((t) => t.text).join("");
+
+  const cases = [
+    ['const x = "hello world";', "string"],
+    ["// a comment at the start", "comment"],
+    ["  const y = 42; // trailing comment", "comment"],
+    ["def foo(self): # python", "comment"],
+    ["let s = 'it\\'s escaped';", "string"],
+    ["", null],
+    ["    ", null],
+  ];
+
+  for (const [line, expectSomeType] of cases) {
+    const tokens = tokenizeLine(line);
+    assert(rejoin(line) === line, `tokenizing "${line}" should losslessly reconstruct the original line`);
+    if (expectSomeType) {
+      assert(
+        tokens.some((t) => t.type === expectSomeType),
+        `expected a "${expectSomeType}" token in "${line}", got types: ${tokens.map((t) => t.type).join(",")}`,
+      );
+    }
+  }
+
+  // Keyword recognition, and that it doesn't fire on substrings.
+  const kw = tokenizeLine("if (isFinished) return functor;");
+  assert(kw.find((t) => t.text === "if")?.type === "keyword", '"if" should be a keyword');
+  assert(kw.find((t) => t.text === "return")?.type === "keyword", '"return" should be a keyword');
+  assert(kw.find((t) => t.text === "isFinished")?.type === "plain", '"isFinished" should not match "if"');
+  assert(kw.find((t) => t.text === "functor")?.type === "plain", '"functor" should not match "for"');
+
+  // A huge line must not hang or blow the stack (tokenizer is a flat loop,
+  // not recursive, but worth pinning down given the huge-file scenarios above).
+  const huge = "x".repeat(200_000);
+  const started = Date.now();
+  tokenizeLine(huge);
+  assert(Date.now() - started < 2000, "tokenizing a 200k-char line took too long");
+}
+
 // ---------- run ----------
 
 const scenarios = [
@@ -532,6 +572,7 @@ const scenarios = [
   ["rapid create/modify/delete churn", scenarioRapidChurn],
   ["case-only rename (APFS)", scenarioCaseOnlyRename],
   ["flash/theme color math edge cases", scenarioThemeMath],
+  ["diff syntax tokenizer", scenarioTokenizer],
 ];
 
 console.log(`Running ${scenarios.length} scenarios...\n`);
