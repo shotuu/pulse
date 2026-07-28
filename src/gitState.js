@@ -101,7 +101,7 @@ const STATUS_MAP = {
   "?": "added", // untracked, treated as "added" for coloring purposes
 };
 
-// Returns Map<path, { status, from? }> for all changes since HEAD (staged + unstaged).
+// Returns Map<path, { status, untracked, from? }> for all changes since HEAD (staged + unstaged).
 export function getChangedFiles(cwd) {
   // --untracked-files=all forces git to list every file inside a new
   // directory individually, instead of collapsing it to one "dir/" entry.

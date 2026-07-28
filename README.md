@@ -26,10 +26,10 @@ Requires [Node.js](https://nodejs.org) 18+.
 ## Usage
 
 ```bash
-pulse                   # watch the current directory
-pulse <dir>              # watch a specific directory
-pulse -p <dir>           # same as above, as a flag
-pulse --no-gitignore     # also include files matched by .gitignore
+pulse                  # watch the current directory
+pulse <dir>            # watch a specific directory
+pulse -p <dir>         # same as above, as a flag
+pulse --no-gitignore   # also include files matched by .gitignore
 pulse --help
 ```
 
@@ -60,21 +60,21 @@ tree goes quiet.
 | `esc` | back to the tree, from a diff |
 | `q` / `ctrl+c` | quit |
 
-Inside a diff view:
+Inside a diff view (`q` here goes back to the tree, not quit):
 
 | Key | Action |
 |---|---|
 | `j` / `k` | scroll one line |
 | `d` / `u` (or PageDown/PageUp) | scroll one page |
-| `esc` | back to the tree |
+| `esc` / `q` | back to the tree |
 
 ## Development
 
 ```bash
-npm start            # run it against the current directory
-npm test              # stress-test the engine against ~20 edge cases
-npm run demo           # watch it live against a scripted sequence of real changes
-npm run demo:clean     # remove the demo playground
+npm start           # run it against the current directory
+npm test             # stress-test the engine against ~20 edge cases
+npm run demo         # watch it live against a scripted sequence of real changes
+npm run demo:clean   # remove the demo playground
 ```
 
 `npm test` builds throwaway git repos under the OS temp dir and exercises
@@ -90,6 +90,10 @@ a trigger — the source of truth for *what* changed is always `git status`
 against `HEAD`, respecting `.gitignore` by default. Filesystem events are
 debounced and batched so a burst of changes (an agent writing dozens of
 files in a loop) doesn't flood the terminal with re-renders.
+
+## License
+
+[MIT](LICENSE)
 
 ---
 
