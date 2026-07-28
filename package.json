@@ -1,7 +1,7 @@
 {
   "name": "pulse",
   "version": "1.0.0",
-  "description": "Live file tree visualizer for watching agent/editor changes since the last git commit",
+  "description": "A live view of your repository's working tree — every change, since your last commit, as it happens.",
   "keywords": ["cli", "tui", "git", "file-watcher", "diff", "terminal", "ink"],
   "author": "shotuu (https://github.com/shotuu)",
   "license": "MIT",

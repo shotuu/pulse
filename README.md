@@ -2,11 +2,9 @@
   <img src="assets/banner.svg" alt="pulse" width="100%" />
 </p>
 
-A live file tree for watching a repo change in real time — every add, edit,
-delete, and rename since your last commit, updating as it happens. Built for
-watching AI coding agents (Claude Code, or anything else) work on a
-codebase: point it at a directory and see exactly what's changing, live, in
-a compact terminal pane.
+<p align="center"><strong>A live view of your repository's working tree — every change, since your last commit, as it happens.</strong></p>
+
+`pulse` renders a compact, self-updating file tree directly in your terminal: every add, edit, delete, and rename appears the moment it's written to disk, with a syntax-aware diff one keystroke away. It was built for watching AI coding agents work through a codebase in real time — though it's just as useful for watching yourself.
 
 ## Install
 
