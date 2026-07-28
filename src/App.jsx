@@ -103,6 +103,7 @@ export default function App({ cwd, respectGitignore }) {
   }, [visibleRows.length]);
 
   useInput((input, key) => {
+    // no-op when not attached to a real TTY (see isActive below)
     if (view.mode === "diff") {
       if (key.escape || input === "q") setView({ mode: "tree" });
       return;
@@ -152,7 +153,7 @@ export default function App({ cwd, respectGitignore }) {
         if (parentIndex >= 0) setCursor(parentIndex);
       }
     }
-  });
+  }, { isActive: Boolean(process.stdin.isTTY) });
 
   if (!tree) return <Text dimColor>starting…</Text>;
 
