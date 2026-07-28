@@ -6,6 +6,7 @@ import { buildTree, flattenVisible, initialExpandedPaths } from "./tree.js";
 import { COLORS, flashBlend, isBold, statusColor } from "./theme.js";
 import { tokenizeLine } from "./highlight.js";
 import { annotateLineNumbers } from "./diffLines.js";
+import { shouldIgnoreWatchPath } from "./gitWatch.js";
 
 const TOKEN_COLOR = {
   keyword: COLORS.syntaxKeyword,
@@ -128,9 +129,8 @@ export default function App({ cwd, respectGitignore }) {
 
     const watcher = chokidar.watch(cwd, {
       ignored: (path) => {
-        if (path.includes("/.git/") || path.endsWith("/.git")) return true;
-        if (respectGitignore && path.includes("/node_modules/")) return true;
-        return false;
+        const rel = path.startsWith(cwd) ? path.slice(cwd.length + 1) : path;
+        return shouldIgnoreWatchPath(rel, respectGitignore);
       },
       ignoreInitial: true,
     });
@@ -150,6 +150,15 @@ export default function App({ cwd, respectGitignore }) {
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 150);
     return () => clearInterval(id);
+  }, []);
+
+  // Low-frequency safety net on top of the filesystem watcher: covers any
+  // git operation or tooling quirk the watcher doesn't catch (worktrees,
+  // packed-refs updates, etc.) so the tree can never drift stale for long.
+  useEffect(() => {
+    const id = setInterval(refresh, 3000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const visibleRows = useMemo(() => (tree ? flattenVisible(tree, expanded) : []), [tree, expanded]);

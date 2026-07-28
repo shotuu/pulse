@@ -21,6 +21,7 @@ import { buildTree, flattenVisible, initialExpandedPaths } from "../src/tree.js"
 import { COLORS, flashBlend, isBold, statusColor } from "../src/theme.js";
 import { tokenizeLine } from "../src/highlight.js";
 import { annotateLineNumbers } from "../src/diffLines.js";
+import { shouldIgnoreWatchPath } from "../src/gitWatch.js";
 
 // ---------- tiny test harness ----------
 
@@ -28,10 +29,10 @@ let passed = 0;
 let failed = 0;
 const failures = [];
 
-function check(name, fn) {
+async function check(name, fn) {
   const started = Date.now();
   try {
-    fn();
+    await fn();
     const ms = Date.now() - started;
     passed++;
     console.log(`  ok   ${name}${ms > 200 ? `  (${ms}ms)` : ""}`);
@@ -599,6 +600,73 @@ function scenarioDiffLineNumbers() {
   }
 }
 
+function scenarioWatchIgnoreRules() {
+  const watched = [".git/HEAD", ".git/packed-refs", ".git/refs/heads/main", ".git/refs/heads/feature/x"];
+  for (const p of watched) {
+    assert(shouldIgnoreWatchPath(p, true) === false, `"${p}" should be watched, not ignored`);
+  }
+
+  const ignored = [
+    ".git/index",
+    ".git/logs/HEAD",
+    ".git/objects/ab/cd1234",
+    ".git/hooks/pre-commit",
+    ".git/refs/tags/v1.0.0",
+    ".git/refs/remotes/origin/main",
+    ".git/COMMIT_EDITMSG",
+  ];
+  for (const p of ignored) {
+    assert(shouldIgnoreWatchPath(p, true) === true, `"${p}" should be ignored`);
+  }
+
+  // The directories on the path to an allowed file must NOT be pruned, or
+  // chokidar never descends far enough to see the file itself.
+  for (const p of ["", ".git", ".git/refs", ".git/refs/heads"]) {
+    assert(shouldIgnoreWatchPath(p, true) === false, `"${p || "(root)"}" must stay traversable`);
+  }
+
+  assert(shouldIgnoreWatchPath("node_modules/foo/index.js", true) === true, "node_modules should be ignored by default");
+  assert(shouldIgnoreWatchPath("node_modules/foo/index.js", false) === false, "node_modules should be watched with --no-gitignore");
+  assert(shouldIgnoreWatchPath("src/App.jsx", true) === false, "ordinary source files should be watched");
+}
+
+// Regression test for the real bug: `git commit` only touches files inside
+// .git (refs, HEAD) — it never touches tracked source files. If the watcher
+// ignores all of .git wholesale, nothing ever fires after a commit and the
+// app silently goes stale. This drives an actual chokidar watcher, with the
+// exact ignore rule the app uses, against a real `git commit`.
+async function scenarioCommitTriggersWatcher() {
+  const chokidarModule = await import("chokidar");
+  const chokidar = chokidarModule.default ?? chokidarModule;
+  const dir = setupRepo();
+  try {
+    write(dir, "a.txt", "hello\n");
+
+    const watcher = chokidar.watch(dir, {
+      ignored: (p) => {
+        const rel = p.startsWith(dir) ? p.slice(dir.length + 1) : p;
+        return shouldIgnoreWatchPath(rel, true);
+      },
+      ignoreInitial: true,
+    });
+
+    const fired = await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), 4000);
+      watcher.on("all", () => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+      // Give the watcher a moment to finish its initial scan before committing.
+      setTimeout(() => commitAll(dir, "trigger commit"), 300);
+    });
+
+    await watcher.close();
+    assert(fired, "a git commit should trigger a watcher event (via .git/HEAD or refs/heads/*)");
+  } finally {
+    cleanup(dir);
+  }
+}
+
 // ---------- run ----------
 
 const scenarios = [
@@ -623,10 +691,12 @@ const scenarios = [
   ["flash/theme color math edge cases", scenarioThemeMath],
   ["diff syntax tokenizer", scenarioTokenizer],
   ["diff line numbering", scenarioDiffLineNumbers],
+  ["watch-ignore rules", scenarioWatchIgnoreRules],
+  ["git commit triggers the watcher", scenarioCommitTriggersWatcher],
 ];
 
 console.log(`Running ${scenarios.length} scenarios...\n`);
-for (const [name, fn] of scenarios) check(name, fn);
+for (const [name, fn] of scenarios) await check(name, fn);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) {
