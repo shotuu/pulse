@@ -87,3 +87,7 @@ a trigger — the source of truth for *what* changed is always `git status`
 against `HEAD`, respecting `.gitignore` by default. Filesystem events are
 debounced and batched so a burst of changes (an agent writing dozens of
 files in a loop) doesn't flood the terminal with re-renders.
+
+---
+
+Made by [shotu](https://github.com/shotu).

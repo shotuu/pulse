@@ -2,6 +2,7 @@
   "name": "pulse",
   "version": "0.1.0",
   "description": "Live file tree visualizer for watching agent/editor changes since the last git commit",
+  "author": "shotu (https://github.com/shotu)",
   "type": "module",
   "bin": {
     "pulse": "./src/index.js"
