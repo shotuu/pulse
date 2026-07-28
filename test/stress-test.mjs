@@ -20,6 +20,7 @@ import { getChangedFiles, getDiff, getLastCommit, isGitRepo, listFiles } from ".
 import { buildTree, flattenVisible, initialExpandedPaths } from "../src/tree.js";
 import { COLORS, flashBlend, isBold, statusColor } from "../src/theme.js";
 import { tokenizeLine } from "../src/highlight.js";
+import { annotateLineNumbers } from "../src/diffLines.js";
 
 // ---------- tiny test harness ----------
 
@@ -550,6 +551,54 @@ function scenarioTokenizer() {
   assert(Date.now() - started < 2000, "tokenizing a 200k-char line took too long");
 }
 
+function scenarioDiffLineNumbers() {
+  const dir = setupRepo();
+  try {
+    const oldLines = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa"];
+    write(dir, "seq.txt", oldLines.join("\n") + "\n");
+    commitAll(dir, "baseline");
+
+    // A deletion, an insertion, and a modification, all in one small file.
+    const newLines = ["alpha", "beta", "delta", "epsilon", "NEWLINE", "zeta", "eta", "THETA", "iota", "kappa"];
+    write(dir, "seq.txt", newLines.join("\n") + "\n");
+
+    const diff = getDiff(dir, "seq.txt", false);
+    const annotated = annotateLineNumbers(diff.split("\n"));
+
+    // Reconstruct each side of the diff purely from the reported line
+    // numbers, and check it against the real content — a git-version-
+    // agnostic way to verify the numbering logic itself, not just one
+    // hardcoded hunk format. Context lines only carry the *new*-side number
+    // (the single-gutter convention this module implements), so only
+    // addition/context lines can reconstruct the new file, and only
+    // deletion lines can reconstruct the old file.
+    const reconstructedNew = [];
+    const reconstructedOld = [];
+    for (const { line, num } of annotated) {
+      if (num == null) continue;
+      if (line.startsWith("+") || line.startsWith(" ")) reconstructedNew[num - 1] = line.slice(1);
+      if (line.startsWith("-")) reconstructedOld[num - 1] = line.slice(1);
+    }
+
+    let newChecked = 0;
+    for (let i = 0; i < newLines.length; i++) {
+      if (reconstructedNew[i] === undefined) continue;
+      newChecked++;
+      assert(reconstructedNew[i] === newLines[i], `new-file line ${i + 1}: expected "${newLines[i]}", got "${reconstructedNew[i]}"`);
+    }
+    let oldChecked = 0;
+    for (let i = 0; i < oldLines.length; i++) {
+      if (reconstructedOld[i] === undefined) continue;
+      oldChecked++;
+      assert(reconstructedOld[i] === oldLines[i], `old-file line ${i + 1}: expected "${oldLines[i]}", got "${reconstructedOld[i]}"`);
+    }
+    assert(newChecked >= 5, "expected most of the new file to be covered by context/addition lines");
+    assert(oldChecked === 2, `expected exactly 2 deletion lines (gamma, theta), got ${oldChecked}`);
+  } finally {
+    cleanup(dir);
+  }
+}
+
 // ---------- run ----------
 
 const scenarios = [
@@ -573,6 +622,7 @@ const scenarios = [
   ["case-only rename (APFS)", scenarioCaseOnlyRename],
   ["flash/theme color math edge cases", scenarioThemeMath],
   ["diff syntax tokenizer", scenarioTokenizer],
+  ["diff line numbering", scenarioDiffLineNumbers],
 ];
 
 console.log(`Running ${scenarios.length} scenarios...\n`);

@@ -5,6 +5,7 @@ import { getChangedFiles, getDiff, getLastCommit, getMtime, listFiles } from "./
 import { buildTree, flattenVisible, initialExpandedPaths } from "./tree.js";
 import { COLORS, flashBlend, isBold, statusColor } from "./theme.js";
 import { tokenizeLine } from "./highlight.js";
+import { annotateLineNumbers } from "./diffLines.js";
 
 const TOKEN_COLOR = {
   keyword: COLORS.syntaxKeyword,
@@ -46,8 +47,7 @@ function rowLabelWidth(row) {
   const prefixLen = branchPrefix(row.ancestorsLast, row.isLast).length;
   const GUTTER = 2;
   if (row.node.type === "dir") {
-    const badge = row.node.changedCount > 0 ? ` ●${row.node.changedCount}` : "";
-    return GUTTER + prefixLen + 2 /* arrow + space */ + row.node.name.length + 1 /* slash */ + badge.length;
+    return GUTTER + prefixLen + 2 /* arrow + space */ + row.node.name.length + 1 /* slash */;
   }
   return GUTTER + prefixLen + row.node.name.length;
 }
@@ -294,14 +294,33 @@ function TreeRow({ row, selected, expanded, flashAt, now, labelWidth }) {
     const hasChanges = node.changedCount > 0;
     const color = hasChanges ? COLORS.dirActive : selected ? COLORS.dirCleanSelected : COLORS.dirClean;
     const arrow = expanded ? " " : "+";
-    const badge = hasChanges ? ` ●${node.changedCount}` : "";
+
+    // Same truncate-to-fit treatment as file rows, so the ●N badge lands in
+    // the same column as file rows' M/A/D instead of trailing the name at a
+    // variable offset.
+    const dirLabel = `${node.name}/`;
+    const nameBudget = Math.max(1, labelWidth - (2 /* gutter */ + prefix.length + 2 /* arrow + space */));
+    const displayLabel =
+      dirLabel.length > nameBudget
+        ? nameBudget <= 1
+          ? dirLabel.slice(0, 1)
+          : dirLabel.slice(0, nameBudget - 1) + "…"
+        : dirLabel;
+    const pad = " ".repeat(Math.max(0, nameBudget - displayLabel.length));
+
     return (
       <Text backgroundColor={selected ? COLORS.selectionBg : undefined} wrap="truncate-end">
         {gutter}
         <Text color={COLORS.branch}>{prefix}</Text>
         <Text color={color} bold={hasChanges}>
-          {arrow} {node.name}/{badge}
+          {arrow} {displayLabel}
+          {pad}
         </Text>
+        {hasChanges ? (
+          <Text color={color} bold>
+            {"   "}●{node.changedCount}
+          </Text>
+        ) : null}
       </Text>
     );
   }
@@ -357,6 +376,13 @@ function DiffView({ file, diff }) {
   const rows = stdout?.rows ?? 24;
   const columns = stdout?.columns ?? 60;
   const lines = useMemo(() => (diff || "(no diff available)").split("\n"), [diff]);
+  const annotated = useMemo(() => annotateLineNumbers(lines), [lines]);
+
+  const gutterWidth = useMemo(() => {
+    let maxNum = 0;
+    for (const a of annotated) if (a.num != null && a.num > maxNum) maxNum = a.num;
+    return Math.max(2, String(maxNum).length);
+  }, [annotated]);
 
   // Same windowing the tree view uses: never hand Ink more lines than the
   // terminal is tall, or the terminal auto-scrolls out from under Ink's own
@@ -375,7 +401,7 @@ function DiffView({ file, diff }) {
     { isActive: Boolean(process.stdin.isTTY) },
   );
 
-  const visibleLines = lines.slice(scroll, scroll + maxVisible);
+  const visibleLines = annotated.slice(scroll, scroll + maxVisible);
   const rule = "─".repeat(Math.max(10, columns));
   const scrollInfo =
     lines.length > maxVisible
@@ -394,8 +420,8 @@ function DiffView({ file, diff }) {
         </Text>
       </Box>
       <Box flexDirection="column">
-        {visibleLines.map((line, i) => (
-          <DiffLine key={scroll + i} line={line} columns={columns} />
+        {visibleLines.map((entry, i) => (
+          <DiffLine key={scroll + i} line={entry.line} num={entry.num} gutterWidth={gutterWidth} columns={columns} />
         ))}
       </Box>
       <Text color={COLORS.branch}>{rule}</Text>
@@ -404,13 +430,18 @@ function DiffView({ file, diff }) {
 }
 
 // Renders one diff line the way Claude Code/GitHub do: a muted background
-// tint carries the added/removed signal, while the code itself keeps its
-// (lightweight, generic) syntax colors instead of being solid green/red.
-function DiffLine({ line, columns }) {
+// tint carries the added/removed signal, a line-number gutter on the left
+// (new-file number for context/additions, old-file number for deletions),
+// and the code itself keeps its (lightweight, generic) syntax colors
+// instead of being solid green/red.
+function DiffLine({ line, num, gutterWidth, columns }) {
+  const gutterBlank = " ".repeat(gutterWidth + 1);
+
   if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("@@") || line.startsWith("\\")) {
     const isHunk = line.startsWith("@@");
     return (
       <Text color={isHunk ? COLORS.diffHunk : undefined} dimColor={!isHunk} wrap="truncate-end">
+        {gutterBlank}
         {line || " "}
       </Text>
     );
@@ -438,16 +469,22 @@ function DiffLine({ line, columns }) {
     // ... differ") — show as-is rather than guessing.
     return (
       <Text dimColor wrap="truncate-end">
+        {gutterBlank}
         {line || " "}
       </Text>
     );
   }
 
   const tokens = tokenizeLine(code);
-  const padLen = Math.max(0, columns - (2 + code.length)); // marker + space + code
+  const gutterText = (num != null ? String(num) : "").padStart(gutterWidth);
+  const padLen = Math.max(0, columns - (gutterWidth + 1 + 2 + code.length)); // gutter + marker + space + code
 
   return (
     <Text backgroundColor={bg} wrap="truncate-end">
+      <Text color={COLORS.branch}>
+        {gutterText}
+        {" "}
+      </Text>
       {markerColor ? (
         <Text color={markerColor} bold>
           {marker}{" "}
