@@ -6,7 +6,14 @@ function ensureDir(root, parts) {
   let path = "";
   for (const part of parts) {
     path = path ? `${path}/${part}` : part;
-    if (!node.children.has(part)) {
+    const existing = node.children.get(part);
+    // A path can be a tracked file at HEAD, get deleted, and be replaced on
+    // disk by a directory of the same name — a real state that only exists
+    // in the working-tree-vs-HEAD comparison window this tool lives in. The
+    // directory wins since that's the current on-disk reality; the stale
+    // file entry (if any) is dropped from the tree, though its "deleted"
+    // status still counts toward the footer totals via the changes map.
+    if (!existing || existing.type !== "dir") {
       node.children.set(part, {
         type: "dir",
         name: part,
@@ -34,6 +41,9 @@ export function buildTree(allFilePaths, changesMap) {
     const parts = path.split("/");
     const fileName = parts.pop();
     const dir = ensureDir(root, parts);
+    // Same collision, other direction: don't let a stale file entry clobber
+    // a directory that another path already established at this slot.
+    if (dir.children.get(fileName)?.type === "dir") continue;
     const change = changesMap.get(path);
     dir.children.set(fileName, {
       type: "file",

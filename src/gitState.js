@@ -4,7 +4,15 @@ import { join, relative } from "node:path";
 
 function git(cwd, args, allowFail = false) {
   try {
-    return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 1024 * 1024 * 32 });
+    // stdio pipes stderr instead of inheriting it, so expected/handled
+    // failures (e.g. `git log` on a repo with no commits yet) don't print
+    // "fatal: ..." straight to the user's terminal.
+    return execFileSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024 * 32,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
   } catch (err) {
     if (allowFail) return err.stdout ?? "";
     throw err;
@@ -53,7 +61,9 @@ function walkAllFiles(cwd) {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
         walk(full);
-      } else if (entry.isFile()) {
+      } else if (entry.isFile() || entry.isSymbolicLink()) {
+        // Treat symlinks (including dangling ones) as leaf entries, same as
+        // `git ls-files` already does in the gitignore-respecting path.
         results.push(relative(cwd, full));
       }
     }
