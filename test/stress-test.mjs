@@ -56,6 +56,17 @@ function setupRepo() {
   git(dir, ["init", "-q"]);
   git(dir, ["config", "user.email", "test@example.com"]);
   git(dir, ["config", "user.name", "Test Runner"]);
+
+  // Tell macOS Spotlight to leave this directory alone. Without it, mdworker
+  // can transiently open/lock a file it's just indexed inside a freshly
+  // created, fast-changing directory (e.g. the 600-file perf scenario),
+  // which shows up later as an ENOTEMPTY/EACCES on cleanup — nothing to do
+  // with the tool itself. Excluded via .git/info/exclude, not the repo's
+  // own .gitignore, since some scenarios write/read their own .gitignore
+  // content — this keeps the marker invisible to every assertion too.
+  writeFileSync(join(dir, ".git", "info", "exclude"), "/.metadata_never_index\n", { flag: "a" });
+  writeFileSync(join(dir, ".metadata_never_index"), "");
+
   return dir;
 }
 
@@ -70,8 +81,26 @@ function commitAll(dir, message) {
   git(dir, ["commit", "-q", "-m", message]);
 }
 
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// Best-effort: a cleanup hiccup (e.g. a transient OS-level file lock) is not
+// a functional failure of the scenario that just ran, and must never be
+// reported as one. Retries with backoff, then gives up with just a warning.
 function cleanup(dir) {
-  rmSync(dir, { recursive: true, force: true });
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      if (attempt === 5) {
+        console.warn(`  (warning) couldn't fully remove temp dir ${dir}: ${err.message}`);
+        return;
+      }
+      sleepSync(150 * attempt);
+    }
+  }
 }
 
 // Runs the full engine pipeline the app would run on each refresh, and
