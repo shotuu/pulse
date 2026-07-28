@@ -52,7 +52,7 @@ function git(cwd, args) {
 }
 
 function setupRepo() {
-  const dir = mkdtempSync(join(tmpdir(), "treewatch-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "pulse-test-"));
   git(dir, ["init", "-q"]);
   git(dir, ["config", "user.email", "test@example.com"]);
   git(dir, ["config", "user.name", "Test Runner"]);

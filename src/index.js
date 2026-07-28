@@ -23,10 +23,10 @@ function parseArgs(argv) {
 const args = parseArgs(process.argv.slice(2));
 
 if (args.help) {
-  console.log(`treewatch — live file tree of changes since the last git commit
+  console.log(`pulse — live file tree of changes since the last git commit
 
 Usage:
-  treewatch [-p|--path <dir>] [--no-gitignore]
+  pulse [-p|--path <dir>] [--no-gitignore]
 
 Options:
   -p, --path <dir>   Directory to watch (default: current directory)
@@ -39,7 +39,7 @@ Options:
 const cwd = resolve(args.path);
 
 if (!isGitRepo(cwd)) {
-  console.error(`treewatch: ${cwd} is not inside a git repository.`);
+  console.error(`pulse: ${cwd} is not inside a git repository.`);
   process.exit(1);
 }
 
