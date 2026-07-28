@@ -40,6 +40,7 @@ export default function App({ cwd, respectGitignore }) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const rows = stdout?.rows ?? 24;
+  const columns = stdout?.columns ?? 60;
 
   const [tree, setTree] = useState(null);
   const [changes, setChanges] = useState(new Map());
@@ -190,43 +191,58 @@ export default function App({ cwd, respectGitignore }) {
     ? `since ${lastCommit.hash} · ${changes.size === 0 ? "clean" : `${changes.size} changed`}`
     : "not a git repo";
 
-  const maxRows = Math.max(4, rows - 6); // header + footer + margins
+  const maxRows = Math.max(4, rows - 8); // header + rules + footer + margins
   let start = 0;
   if (cursor >= maxRows) start = cursor - maxRows + 1;
   const windowRows = visibleRows.slice(start, start + maxRows);
   const maxLabelWidth = visibleRows.reduce((max, row) => Math.max(max, rowLabelWidth(row)), 0);
+  const rule = "─".repeat(Math.max(10, columns));
+  const isClean = changes.size === 0;
 
   return (
     <Box flexDirection="column">
+      <Text color={COLORS.branch}>{rule}</Text>
+
       <Box justifyContent="space-between">
         <Text bold>{repoName}/</Text>
-        <Text dimColor>
-          {headerRight}    {clock}
+        <Text>
+          <Text color={COLORS.flash}>{headerRight}</Text>
+          <Text dimColor>    {clock}</Text>
         </Text>
       </Box>
 
       <Box flexDirection="column">
-        {windowRows.map((row, i) => (
-          <TreeRow
-            key={row.node.path}
-            row={row}
-            selected={start + i === cursor}
-            expanded={expanded.has(row.node.path)}
-            flashAt={flashes.get(row.node.path)}
-            now={now}
-            labelWidth={maxLabelWidth}
-          />
-        ))}
+        {visibleRows.length === 0 ? (
+          <Text dimColor>(empty directory)</Text>
+        ) : (
+          windowRows.map((row, i) => (
+            <TreeRow
+              key={row.node.path}
+              row={row}
+              selected={start + i === cursor}
+              expanded={expanded.has(row.node.path)}
+              flashAt={flashes.get(row.node.path)}
+              now={now}
+              labelWidth={maxLabelWidth}
+            />
+          ))
+        )}
       </Box>
 
       <Box justifyContent="space-between">
-        <Text dimColor>
-          <Text color={COLORS.modified}>{counts.modified} modified</Text> ·{" "}
-          <Text color={COLORS.added}>{counts.added} added</Text> ·{" "}
-          <Text color={COLORS.deleted}>{counts.deleted} deleted</Text>
-        </Text>
+        {isClean ? (
+          <Text color={COLORS.added}>✓ clean — nothing changed since last commit</Text>
+        ) : (
+          <Text dimColor>
+            <Text color={COLORS.modified}>{counts.modified} modified</Text> ·{" "}
+            <Text color={COLORS.added}>{counts.added} added</Text> ·{" "}
+            <Text color={COLORS.deleted}>{counts.deleted} deleted</Text>
+          </Text>
+        )}
         <Text dimColor>[enter] expand/diff  [c] collapse  [q] quit</Text>
       </Box>
+
+      <Text color={COLORS.branch}>{rule}</Text>
     </Box>
   );
 }
@@ -240,7 +256,7 @@ function TreeRow({ row, selected, expanded, flashAt, now, labelWidth }) {
   if (node.type === "dir") {
     const hasChanges = node.changedCount > 0;
     const color = hasChanges ? COLORS.dirActive : selected ? COLORS.dirCleanSelected : COLORS.dirClean;
-    const arrow = expanded ? "▾" : "▸";
+    const arrow = expanded ? " " : "+";
     const badge = hasChanges ? ` ●${node.changedCount}` : "";
     return (
       <Text backgroundColor={selected ? COLORS.selectionBg : undefined}>
