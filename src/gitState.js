@@ -96,6 +96,24 @@ export function listFiles(cwd, respectGitignore) {
   return respectGitignore ? listGitFiles(cwd) : walkAllFiles(cwd);
 }
 
+// Top-level directories .gitignore excludes entirely — a Python venv/, a
+// Rust target/, dist/, .next/, coverage/, whatever. --directory makes git
+// report a wholly-ignored directory as a single "name/" entry instead of
+// recursing into every file inside it, which is exactly the list the
+// filesystem watcher needs to prune: watching thousands of files inside a
+// gitignored directory is how EMFILE ("too many open files") happens.
+export function getIgnoredDirs(cwd) {
+  try {
+    const out = git(cwd, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"]);
+    return out
+      .split("\0")
+      .filter((p) => p.endsWith("/"))
+      .map((p) => p.slice(0, -1));
+  } catch {
+    return [];
+  }
+}
+
 // Fallback "how long ago" source for changes that predate the watcher —
 // e.g. a file already dirty when the tool was launched, so there was never
 // a live filesystem event to time-stamp it. Returns null for paths that no

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import chokidar from "chokidar";
-import { getChangedFiles, getDiff, getLastCommit, getMtime, getUnpushedCount, listFiles } from "./gitState.js";
+import { getChangedFiles, getDiff, getIgnoredDirs, getLastCommit, getMtime, getUnpushedCount, listFiles } from "./gitState.js";
 import { buildTree, flattenVisible, initialExpandedPaths } from "./tree.js";
 import { COLORS, flashBlend, isBold, statusColor } from "./theme.js";
 import { tokenizeLine } from "./highlight.js";
@@ -144,10 +144,18 @@ export default function App({ cwd, respectGitignore }) {
       // Transient — the watcher/poll below will retry via refresh().
     }
 
+    // Directories .gitignore excludes wholesale (a venv/, target/, dist/,
+    // node_modules, ...) must never be watched — that's how EMFILE ("too
+    // many open files") happens, one handle per subdirectory inside them.
+    // Computed once; a mid-session .gitignore edit won't be picked up until
+    // restart, which is an acceptable tradeoff for not re-shelling out on
+    // every watch event.
+    const ignoredDirs = getIgnoredDirs(cwd);
+
     const watcher = chokidar.watch(cwd, {
       ignored: (path) => {
         const rel = path.startsWith(cwd) ? path.slice(cwd.length + 1) : path;
-        return shouldIgnoreWatchPath(rel, respectGitignore);
+        return shouldIgnoreWatchPath(rel, respectGitignore, ignoredDirs);
       },
       ignoreInitial: true,
     });
@@ -157,6 +165,14 @@ export default function App({ cwd, respectGitignore }) {
       flashesRef.current.set(rel, Date.now()); // no setState here — see flashesRef comment above
       clearTimeout(debounceTimer.current);
       debounceTimer.current = setTimeout(refresh, DEBOUNCE_MS);
+    });
+
+    // Without this, any watcher error (EMFILE, EACCES on some
+    // subdirectory, ...) is an unhandled 'error' event and takes the whole
+    // process down. Degrade instead: keep running on the 10s safety-net
+    // poll alone, which is slower but still correct.
+    watcher.on("error", () => {
+      watcher.close();
     });
 
     return () => watcher.close();

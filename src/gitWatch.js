@@ -12,7 +12,14 @@
 // refs/heads/* through (and the directories on the path to them, since an
 // `ignored` callback that returns true for a directory prunes chokidar's
 // traversal and it never looks inside).
-export function shouldIgnoreWatchPath(relPath, respectGitignore) {
+// `ignoredDirs` is the list from getIgnoredDirs(cwd) — repo-root-relative
+// directories .gitignore excludes wholesale (a venv/, target/, dist/, ...).
+// Watching any of them is how "too many open files" (EMFILE) happens: a
+// watch handle gets opened per subdirectory, and a dependency/build/venv
+// tree can easily have thousands. node_modules is excluded unconditionally
+// (even with --no-gitignore) since watching it is never useful and it's
+// reliably the single biggest offender.
+export function shouldIgnoreWatchPath(relPath, respectGitignore, ignoredDirs = []) {
   if (relPath === "" || relPath === ".git") return false; // must descend into .git to reach refs
 
   if (relPath.startsWith(".git/")) {
@@ -23,8 +30,12 @@ export function shouldIgnoreWatchPath(relPath, respectGitignore) {
     return true; // everything else under .git: objects, index, logs, hooks, refs/tags, ...
   }
 
-  if (respectGitignore && (relPath === "node_modules" || relPath.startsWith("node_modules/"))) {
-    return true;
+  if (relPath === "node_modules" || relPath.startsWith("node_modules/")) return true;
+
+  if (respectGitignore) {
+    for (const dir of ignoredDirs) {
+      if (relPath === dir || relPath.startsWith(`${dir}/`)) return true;
+    }
   }
 
   return false;

@@ -16,7 +16,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
-import { getChangedFiles, getDiff, getLastCommit, getUnpushedCount, isGitRepo, listFiles } from "../src/gitState.js";
+import { getChangedFiles, getDiff, getIgnoredDirs, getLastCommit, getUnpushedCount, isGitRepo, listFiles } from "../src/gitState.js";
 import { buildTree, flattenVisible, initialExpandedPaths } from "../src/tree.js";
 import { COLORS, flashBlend, isBold, statusColor } from "../src/theme.js";
 import { tokenizeLine } from "../src/highlight.js";
@@ -664,9 +664,22 @@ function scenarioWatchIgnoreRules() {
     assert(shouldIgnoreWatchPath(p, true) === false, `"${p || "(root)"}" must stay traversable`);
   }
 
+  // node_modules is excluded from the *watcher* unconditionally — even with
+  // --no-gitignore, which only affects what's displayed, not what's safe to
+  // open thousands of file-watch handles inside.
   assert(shouldIgnoreWatchPath("node_modules/foo/index.js", true) === true, "node_modules should be ignored by default");
-  assert(shouldIgnoreWatchPath("node_modules/foo/index.js", false) === false, "node_modules should be watched with --no-gitignore");
+  assert(shouldIgnoreWatchPath("node_modules/foo/index.js", false) === true, "node_modules should stay ignored even with --no-gitignore");
   assert(shouldIgnoreWatchPath("src/App.jsx", true) === false, "ordinary source files should be watched");
+
+  // Arbitrary gitignored directories (not just node_modules) — the actual
+  // EMFILE fix: a venv/, target/, dist/, whatever git reports as ignored.
+  const ignoredDirs = ["venv", "target", "some/nested/dir"];
+  assert(shouldIgnoreWatchPath("venv", true, ignoredDirs) === true, "an ignored top-level dir itself should be pruned");
+  assert(shouldIgnoreWatchPath("venv/lib/python3.11/site-packages/x.py", true, ignoredDirs) === true, "contents of an ignored dir should be pruned");
+  assert(shouldIgnoreWatchPath("target/debug/build", true, ignoredDirs) === true, "contents of a nested ignored dir should be pruned");
+  assert(shouldIgnoreWatchPath("some/nested/dir/file.txt", true, ignoredDirs) === true, "contents of a multi-segment ignored dir should be pruned");
+  assert(shouldIgnoreWatchPath("venv-other/file.txt", true, ignoredDirs) === false, "a dir merely prefixed by an ignored name should NOT be pruned");
+  assert(shouldIgnoreWatchPath("venv", false, ignoredDirs) === false, "ignoredDirs should not apply with --no-gitignore");
 }
 
 // Regression test for the real bug: `git commit` only touches files inside
@@ -706,6 +719,75 @@ async function scenarioCommitTriggersWatcher() {
   }
 }
 
+function scenarioIgnoredDirsDetection() {
+  const dir = setupRepo();
+  try {
+    write(dir, ".gitignore", "venv/\ndist/\n");
+    write(dir, "src/index.js", "content\n");
+    write(dir, "venv/lib/site-packages/pkg/__init__.py", "content\n");
+    write(dir, "dist/bundle.js", "content\n");
+    commitAll(dir, "baseline");
+
+    const ignoredDirs = getIgnoredDirs(dir);
+    assert(ignoredDirs.includes("venv"), `expected "venv" in ignored dirs, got: ${ignoredDirs.join(",")}`);
+    assert(ignoredDirs.includes("dist"), `expected "dist" in ignored dirs, got: ${ignoredDirs.join(",")}`);
+    assert(!ignoredDirs.includes("src"), "src (not ignored) should not show up");
+  } finally {
+    cleanup(dir);
+  }
+}
+
+// Direct regression test for the reported EMFILE crash: a gitignored
+// directory containing many subdirectories (a venv/, a target/, ...) must
+// never have chokidar descend into it, or a real project's dependency/build
+// tree opens one file-watch handle per subdirectory until the OS refuses
+// with "too many open files".
+async function scenarioWatcherPrunesIgnoredDirs() {
+  const chokidarModule = await import("chokidar");
+  const chokidar = chokidarModule.default ?? chokidarModule;
+  const dir = setupRepo();
+  try {
+    write(dir, ".gitignore", "bigignored/\n");
+    write(dir, "src/index.js", "content\n");
+    commitAll(dir, "baseline");
+
+    for (let i = 0; i < 150; i++) write(dir, `bigignored/sub-${i}/file.txt`, "x\n");
+
+    const ignoredDirs = getIgnoredDirs(dir);
+    assert(ignoredDirs.includes("bigignored"), "bigignored should be detected as a gitignored directory");
+
+    const watcher = chokidar.watch(dir, {
+      ignored: (p) => {
+        const rel = p.startsWith(dir) ? p.slice(dir.length + 1) : p;
+        return shouldIgnoreWatchPath(rel, true, ignoredDirs);
+      },
+      ignoreInitial: true,
+    });
+
+    let errored = false;
+    watcher.on("error", () => {
+      errored = true;
+    });
+
+    await new Promise((resolve) => {
+      watcher.on("ready", resolve);
+      setTimeout(resolve, 2000); // safety timeout in case 'ready' never fires
+    });
+
+    const watched = watcher.getWatched();
+    const leakedIntoIgnored = Object.entries(watched).some(
+      ([watchedDir, files]) => watchedDir.includes("bigignored/sub-") || files.some((f) => `${watchedDir}/${f}`.includes("bigignored/sub-")),
+    );
+
+    await watcher.close();
+
+    assert(!errored, "watcher should not error when a large ignored directory is correctly pruned");
+    assert(!leakedIntoIgnored, "watcher should never have descended into the ignored directory's subdirectories");
+  } finally {
+    cleanup(dir);
+  }
+}
+
 // ---------- run ----------
 
 const scenarios = [
@@ -734,6 +816,8 @@ const scenarios = [
   ["diff line numbering", scenarioDiffLineNumbers],
   ["watch-ignore rules", scenarioWatchIgnoreRules],
   ["git commit triggers the watcher", scenarioCommitTriggersWatcher],
+  ["detects gitignored directories", scenarioIgnoredDirsDetection],
+  ["watcher prunes large ignored directories (EMFILE regression)", scenarioWatcherPrunesIgnoredDirs],
 ];
 
 console.log(`Running ${scenarios.length} scenarios...\n`);
