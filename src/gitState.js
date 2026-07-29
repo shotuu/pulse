@@ -6,12 +6,15 @@ function git(cwd, args, allowFail = false) {
   try {
     // stdio pipes stderr instead of inheriting it, so expected/handled
     // failures (e.g. `git log` on a repo with no commits yet) don't print
-    // "fatal: ..." straight to the user's terminal.
+    // "fatal: ..." straight to the user's terminal. stdin stays 'pipe'
+    // (execFileSync's own default) rather than 'ignore' — 'ignore' opens a
+    // /dev/null handle per spawn, which has been flaky (EBADF) in Node when
+    // the parent's own stdin is in raw mode, as Ink's is here.
     return execFileSync("git", args, {
       cwd,
       encoding: "utf8",
       maxBuffer: 1024 * 1024 * 32,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
   } catch (err) {
     if (allowFail) return err.stdout ?? "";

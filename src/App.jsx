@@ -90,42 +90,56 @@ export default function App({ cwd, respectGitignore }) {
   }
 
   function refresh() {
-    const files = listFiles(cwd, respectGitignore);
-    const changesMap = getChangedFiles(cwd);
-    const nextTree = buildTree(files, changesMap);
-    setTree(nextTree);
-    setChanges(changesMap);
-    setLastCommit(getLastCommit(cwd));
-    seedFlashesFromMtime(changesMap);
+    // Runs from a timer (debounced watcher events, and the periodic safety
+    // net below) with nothing else in the call stack to catch a throw — an
+    // uncaught exception here kills the whole process. `git` calls can fail
+    // transiently for reasons that have nothing to do with the repo itself
+    // (a concurrent lock, a flaky spawn), so this must never crash the app;
+    // worst case, just try again on the next event or poll tick.
+    try {
+      const files = listFiles(cwd, respectGitignore);
+      const changesMap = getChangedFiles(cwd);
+      const nextTree = buildTree(files, changesMap);
+      setTree(nextTree);
+      setChanges(changesMap);
+      setLastCommit(getLastCommit(cwd));
+      seedFlashesFromMtime(changesMap);
 
-    setExpanded((prevExpanded) => {
-      const next = new Set(prevExpanded);
-      for (const path of changesMap.keys()) {
-        if (!prevChangedKeys.current.has(path)) {
-          const parts = path.split("/");
-          parts.pop();
-          let acc = "";
-          for (const part of parts) {
-            acc = acc ? `${acc}/${part}` : part;
-            next.add(acc);
+      setExpanded((prevExpanded) => {
+        const next = new Set(prevExpanded);
+        for (const path of changesMap.keys()) {
+          if (!prevChangedKeys.current.has(path)) {
+            const parts = path.split("/");
+            parts.pop();
+            let acc = "";
+            for (const part of parts) {
+              acc = acc ? `${acc}/${part}` : part;
+              next.add(acc);
+            }
           }
         }
-      }
-      return next;
-    });
-    prevChangedKeys.current = new Set(changesMap.keys());
+        return next;
+      });
+      prevChangedKeys.current = new Set(changesMap.keys());
+    } catch {
+      // Transient — leave state as-is and let the next event or poll retry.
+    }
   }
 
   useEffect(() => {
-    const files = listFiles(cwd, respectGitignore);
-    const changesMap = getChangedFiles(cwd);
-    const initial = buildTree(files, changesMap);
-    setTree(initial);
-    setChanges(changesMap);
-    setExpanded(initialExpandedPaths(changesMap));
-    setLastCommit(getLastCommit(cwd));
-    seedFlashesFromMtime(changesMap);
-    prevChangedKeys.current = new Set(changesMap.keys());
+    try {
+      const files = listFiles(cwd, respectGitignore);
+      const changesMap = getChangedFiles(cwd);
+      const initial = buildTree(files, changesMap);
+      setTree(initial);
+      setChanges(changesMap);
+      setExpanded(initialExpandedPaths(changesMap));
+      setLastCommit(getLastCommit(cwd));
+      seedFlashesFromMtime(changesMap);
+      prevChangedKeys.current = new Set(changesMap.keys());
+    } catch {
+      // Transient — the watcher/poll below will retry via refresh().
+    }
 
     const watcher = chokidar.watch(cwd, {
       ignored: (path) => {
@@ -155,8 +169,10 @@ export default function App({ cwd, respectGitignore }) {
   // Low-frequency safety net on top of the filesystem watcher: covers any
   // git operation or tooling quirk the watcher doesn't catch (worktrees,
   // packed-refs updates, etc.) so the tree can never drift stale for long.
+  // Deliberately slow (not the primary update path, the watcher is) to keep
+  // synchronous `git` spawns infrequent.
   useEffect(() => {
-    const id = setInterval(refresh, 3000);
+    const id = setInterval(refresh, 10000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
