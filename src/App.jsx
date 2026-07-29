@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import chokidar from "chokidar";
-import { getChangedFiles, getDiff, getLastCommit, getMtime, listFiles } from "./gitState.js";
+import { getChangedFiles, getDiff, getLastCommit, getMtime, getUnpushedCount, listFiles } from "./gitState.js";
 import { buildTree, flattenVisible, initialExpandedPaths } from "./tree.js";
 import { COLORS, flashBlend, isBold, statusColor } from "./theme.js";
 import { tokenizeLine } from "./highlight.js";
@@ -64,6 +64,7 @@ export default function App({ cwd, respectGitignore }) {
   const [expanded, setExpanded] = useState(() => new Set([""]));
   const [cursor, setCursor] = useState(0);
   const [lastCommit, setLastCommit] = useState({ hash: null, subject: null });
+  const [unpushed, setUnpushed] = useState(null);
   const [now, setNow] = useState(Date.now());
   const [view, setView] = useState({ mode: "tree" });
 
@@ -103,6 +104,7 @@ export default function App({ cwd, respectGitignore }) {
       setTree(nextTree);
       setChanges(changesMap);
       setLastCommit(getLastCommit(cwd));
+      setUnpushed(getUnpushedCount(cwd));
       seedFlashesFromMtime(changesMap);
 
       setExpanded((prevExpanded) => {
@@ -135,6 +137,7 @@ export default function App({ cwd, respectGitignore }) {
       setChanges(changesMap);
       setExpanded(initialExpandedPaths(changesMap));
       setLastCommit(getLastCommit(cwd));
+      setUnpushed(getUnpushedCount(cwd));
       seedFlashesFromMtime(changesMap);
       prevChangedKeys.current = new Set(changesMap.keys());
     } catch {
@@ -248,8 +251,9 @@ export default function App({ cwd, respectGitignore }) {
   }
   const repoName = cwd.split("/").filter(Boolean).pop() ?? cwd;
   const commitAge = lastCommit.timestampMs != null ? `${timeAgo(now - lastCommit.timestampMs)} ago` : null;
+  const unpushedText = unpushed ? `${unpushed} unpushed · ` : ""; // hidden when 0 or no upstream (null)
   const headerRight = lastCommit.hash
-    ? `since ${lastCommit.hash} (${commitAge}) · ${changes.size === 0 ? "clean" : `${changes.size} changed`}`
+    ? `since ${lastCommit.hash} (${commitAge}) · ${unpushedText}${changes.size === 0 ? "clean" : `${changes.size} changed`}`
     : "not a git repo";
 
   const maxRows = Math.max(4, rows - 8); // header + rules + footer + margins

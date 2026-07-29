@@ -16,7 +16,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
-import { getChangedFiles, getDiff, getLastCommit, isGitRepo, listFiles } from "../src/gitState.js";
+import { getChangedFiles, getDiff, getLastCommit, getUnpushedCount, isGitRepo, listFiles } from "../src/gitState.js";
 import { buildTree, flattenVisible, initialExpandedPaths } from "../src/tree.js";
 import { COLORS, flashBlend, isBold, statusColor } from "../src/theme.js";
 import { tokenizeLine } from "../src/highlight.js";
@@ -499,6 +499,45 @@ function scenarioCaseOnlyRename() {
   }
 }
 
+function scenarioUnpushedNoUpstream() {
+  const dir = setupRepo();
+  try {
+    write(dir, "a.txt", "1\n");
+    commitAll(dir, "first");
+    assert(getUnpushedCount(dir) === null, "no upstream configured should report null, not 0");
+  } finally {
+    cleanup(dir);
+  }
+}
+
+function scenarioUnpushedCount() {
+  const dir = setupRepo();
+  const remoteDir = mkdtempSync(join(tmpdir(), "pulse-remote-"));
+  try {
+    git(remoteDir, ["init", "-q", "--bare"]);
+
+    write(dir, "a.txt", "1\n");
+    commitAll(dir, "first");
+    const branch = git(dir, ["branch", "--show-current"]).trim();
+    git(dir, ["remote", "add", "origin", remoteDir]);
+    git(dir, ["push", "-q", "-u", "origin", branch]);
+
+    assert(getUnpushedCount(dir) === 0, "freshly pushed repo should report 0 unpushed");
+
+    write(dir, "b.txt", "2\n");
+    commitAll(dir, "second");
+    write(dir, "c.txt", "3\n");
+    commitAll(dir, "third");
+    assert(getUnpushedCount(dir) === 2, `expected 2 unpushed commits, got ${getUnpushedCount(dir)}`);
+
+    git(dir, ["push", "-q"]);
+    assert(getUnpushedCount(dir) === 0, "after pushing, should be back to 0 unpushed");
+  } finally {
+    cleanup(dir);
+    rmSync(remoteDir, { recursive: true, force: true });
+  }
+}
+
 function scenarioThemeMath() {
   for (const status of ["modified", "added", "deleted", "renamed", null, undefined]) {
     for (const elapsed of [-1000, 0, 1, 500, 999, 1000, 1001, 5000, 1e9]) {
@@ -688,6 +727,8 @@ const scenarios = [
   ["many files in one directory (600, perf)", scenarioManyFilesFlat],
   ["rapid create/modify/delete churn", scenarioRapidChurn],
   ["case-only rename (APFS)", scenarioCaseOnlyRename],
+  ["unpushed count: no upstream configured", scenarioUnpushedNoUpstream],
+  ["unpushed count: tracks ahead-of-origin", scenarioUnpushedCount],
   ["flash/theme color math edge cases", scenarioThemeMath],
   ["diff syntax tokenizer", scenarioTokenizer],
   ["diff line numbering", scenarioDiffLineNumbers],

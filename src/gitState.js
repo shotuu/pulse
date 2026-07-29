@@ -22,6 +22,20 @@ function git(cwd, args, allowFail = false) {
   }
 }
 
+// Commits on HEAD not yet on the upstream branch. Returns null (not 0) when
+// there's no upstream configured — a detached HEAD or a branch that's never
+// been pushed — so the caller can tell "nothing to show" apart from
+// "genuinely 0 unpushed commits".
+export function getUnpushedCount(cwd) {
+  try {
+    const out = git(cwd, ["rev-list", "--count", "@{u}..HEAD"]).trim();
+    const n = Number(out);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 export function isGitRepo(cwd) {
   try {
     git(cwd, ["rev-parse", "--is-inside-work-tree"]);
