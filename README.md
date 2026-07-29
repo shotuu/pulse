@@ -44,6 +44,9 @@ pulse --help
   get a muted background tint (not solid green/red text) with lightweight
   syntax highlighting on top, plus a line-number gutter, similar to Claude
   Code's diff rendering
+- An unpushed-commit count in the header when you're ahead of the upstream
+  branch (`since <hash> · 2 unpushed · clean`) — hidden entirely once you
+  push, or if the branch has no upstream configured
 
 Everything is scoped to changes **since your last commit** — commit, and the
 tree goes quiet.
