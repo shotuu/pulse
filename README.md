@@ -21,6 +21,17 @@ rebuilds and re-links.
 
 Requires [Node.js](https://nodejs.org) 18+.
 
+### Updating
+
+```bash
+pulse --update
+```
+
+Pulls the latest commit and rebuilds — works from anywhere, not just inside
+the clone, since it resolves the real repo through the installed symlink.
+Equivalent to `cd` into the clone and running `git pull && ./install.sh`
+yourself.
+
 ## Usage
 
 ```bash
